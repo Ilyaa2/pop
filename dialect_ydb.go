@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -23,7 +24,9 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/ory/x/sqlxx"
 	_ "github.com/ydb-platform/ydb-go-sdk/v3"
+	ydb_driver "github.com/ydb-platform/ydb-go-sdk/v3"
 	"github.com/ydb-platform/ydb-go-sdk/v3/table/types"
+	yc "github.com/ydb-platform/ydb-go-yc"
 )
 
 const NameYDB = "ydb"
@@ -40,6 +43,7 @@ func init() {
 	dialectSynonyms["ydb3"] = NameYDB
 	dialectSynonyms["ydb/3"] = NameYDB
 	dialectSynonyms["grpc"] = NameYDB
+	dialectSynonyms["grpcs"] = NameYDB
 
 	finalizer[NameYDB] = finalizerYDB
 	newConnection[NameYDB] = newYdb
@@ -530,7 +534,7 @@ func (y *ydb) TruncateAll(connection *Connection) error {
 		tables = append(tables, fullPath)
 	}
 
-	newConn, err := sql.Open(NameYDB, y.URL())
+	newConn, err := OpenYdbConn(NameYDB, y.URL())
 	if err != nil {
 		return err
 	}
@@ -590,4 +594,34 @@ func ExecuteYqlOpSeparately(conn *Connection, sql string) error {
 		}
 	}
 	return nil
+}
+
+func OpenYdbConn(driverName, dsn string) (*sql.DB, error) {
+	ctx := context.Background()
+
+	if !strings.Contains(dsn, "grpcs") {
+		db, err := sql.Open(driverName, dsn)
+		if err != nil {
+			return nil, err
+		}
+		return db, nil
+	}
+
+	nativeDriver, err := ydb_driver.Open(ctx,
+		dsn,
+		yc.WithInternalCA(),
+		yc.WithServiceAccountKeyFileCredentials(
+			os.Getenv("YDB_SERVICE_ACCOUNT_KEY_FILE_CREDENTIALS"),
+		),
+	)
+	if err != nil {
+		return nil, err
+	}
+	connector, err := ydb_driver.Connector(nativeDriver)
+	if err != nil {
+		return nil, err
+	}
+
+	db := sql.OpenDB(connector)
+	return db, nil
 }

@@ -119,7 +119,7 @@ func (c *Connection) Open() error {
 		err  error
 	)
 	if c.Dialect.Name() == NameYDB {
-		conn, err := sql.Open(c.Dialect.Name(), c.Dialect.URL())
+		conn, err := OpenYdbConn(c.Dialect.Name(), c.Dialect.URL())
 		if err != nil {
 			return err
 		}
